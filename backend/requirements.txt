@@ -1,9 +1,7 @@
-flask==3.0.0
-flask-cors==4.0.0
-psycopg2-binary==2.9.9
-sqlalchemy==2.0.23
-python-dotenv==1.0.0
-kaggle>=1.5.0,<1.7.0
-pandas>=1.5.0,<2.1.0
-numpy>=1.23.0,<1.25.0
-gunicorn==21.2.0
+# Requirements for running the Flask API server only
+flask
+flask-cors
+psycopg2-binary
+sqlalchemy
+python-dotenv
+gunicorn

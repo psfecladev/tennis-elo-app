@@ -1,0 +1,9 @@
+# Requirements for running the data update script (includes Kaggle/pandas)
+flask
+flask-cors
+psycopg2-binary
+sqlalchemy
+python-dotenv
+gunicorn
+kaggle
+pandas
