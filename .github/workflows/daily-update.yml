@@ -1,0 +1,64 @@
+name: Daily Update
+
+on:
+  schedule:
+    # Run daily at 6:00 AM UTC (after most tennis matches have concluded)
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      force_full_update:
+        description: 'Force full recalculation of all ratings'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  update-ratings:
+    name: Update Elo Ratings
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+      KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Configure Kaggle credentials
+        run: |
+          mkdir -p ~/.kaggle
+          echo '{"username":"${{ secrets.KAGGLE_USERNAME }}","key":"${{ secrets.KAGGLE_KEY }}"}' > ~/.kaggle/kaggle.json
+          chmod 600 ~/.kaggle/kaggle.json
+
+      - name: Run update script
+        working-directory: backend
+        run: |
+          if [ "${{ inputs.force_full_update }}" == "true" ]; then
+            python scripts/update_ratings.py --full
+          else
+            python scripts/update_ratings.py
+          fi
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Daily rating update failed. Check logs for details."
+
+  notify-success:
+    name: Notify Success
+    needs: update-ratings
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - name: Success notification
+        run: |
+          echo "::notice::Daily Elo rating update completed successfully at $(date -u)"
