@@ -128,6 +128,9 @@ def create_app():
     return app
 
 
+# Initialize database tables on module load (for gunicorn)
+init_db()
+
+
 if __name__ == '__main__':
-    create_app()
     app.run(debug=True, port=5000)
