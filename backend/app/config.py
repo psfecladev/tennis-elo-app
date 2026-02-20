@@ -12,7 +12,7 @@ class Config:
     # Kaggle
     KAGGLE_USERNAME = os.getenv('KAGGLE_USERNAME')
     KAGGLE_KEY = os.getenv('KAGGLE_KEY')
-    KAGGLE_DATASET = 'dissfya/atp-tennis-2000-2024daily-update'
+    KAGGLE_DATASET = 'dissfya/atp-tennis-2000-2023daily-pull'
     
     # Elo settings
     ELO_K_FACTOR = 32

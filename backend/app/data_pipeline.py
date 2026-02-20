@@ -33,10 +33,13 @@ def classify_surface(row):
     - clay: Clay court matches
     - grass: Grass court matches
     
-    Uses tournament name and surface column from dataset.
+    Uses Surface and Court columns from dataset.
     """
-    surface = str(row.get('surface', '')).lower().strip()
-    tournament = str(row.get('tourney_name', '')).lower().strip()
+    # Get surface type (Hard, Clay, Grass)
+    surface = str(row.get('Surface', '')).lower().strip()
+    # Get court type (Indoor, Outdoor)
+    court = str(row.get('Court', '')).lower().strip()
+    tournament = str(row.get('Tournament', '')).lower().strip()
     
     # Grass courts
     if surface == 'grass' or any(t in tournament for t in GRASS_TOURNAMENTS):
@@ -46,9 +49,15 @@ def classify_surface(row):
     if surface == 'clay':
         return 'clay'
     
-    # Hard courts - determine indoor vs outdoor
+    # Hard courts - determine indoor vs outdoor using Court column
     if surface == 'hard' or surface == 'carpet':
-        # Check if indoor based on tournament name
+        # Use Court column if available
+        if court == 'indoor':
+            return 'indoor_hard'
+        elif court == 'outdoor':
+            return 'outdoor_hard'
+        
+        # Fallback: Check if indoor based on tournament name
         if any(t in tournament for t in INDOOR_TOURNAMENTS):
             return 'indoor_hard'
         
@@ -102,6 +111,10 @@ def load_and_process_data(csv_path):
     """
     Load CSV and process into structured match data.
     Returns DataFrame with classified surfaces.
+    
+    Expected CSV columns: Tournament,Date,Series,Court,Surface,Round,Best of,
+                         Player_1,Player_2,Winner,Rank_1,Rank_2,Pts_1,Pts_2,
+                         Odd_1,Odd_2,Score
     """
     print(f"Loading data from {csv_path}")
     
@@ -109,12 +122,15 @@ def load_and_process_data(csv_path):
     df = pd.read_csv(csv_path, low_memory=False)
     
     print(f"Loaded {len(df)} matches")
+    print(f"Columns: {list(df.columns)}")
     
-    # Parse dates
-    if 'tourney_date' in df.columns:
-        df['match_date'] = pd.to_datetime(df['tourney_date'], format='%Y%m%d', errors='coerce')
+    # Parse dates - the Date column is in YYYY-MM-DD format
+    if 'Date' in df.columns:
+        df['match_date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d', errors='coerce')
+    else:
+        raise ValueError("CSV missing 'Date' column")
     
-    # Classify surfaces
+    # Classify surfaces using Surface and Court columns
     df['classified_surface'] = df.apply(classify_surface, axis=1)
     
     # Sort by date
@@ -131,45 +147,84 @@ def get_match_records(df):
     """
     Extract match records from DataFrame.
     Returns list of match dictionaries ready for Elo processing.
+    
+    CSV format has Player_1, Player_2, Winner columns with player names.
+    Winner column matches either Player_1 or Player_2.
     """
     matches = []
+    skipped = 0
     
-    for _, row in df.iterrows():
+    for idx, row in df.iterrows():
         try:
+            # Get player names
+            player_1 = str(row.get('Player_1', '')).strip()
+            player_2 = str(row.get('Player_2', '')).strip()
+            winner_name = str(row.get('Winner', '')).strip()
+            
+            # Skip if missing required fields
+            if not player_1 or not player_2 or not winner_name:
+                skipped += 1
+                continue
+            if player_1 == 'nan' or player_2 == 'nan':
+                skipped += 1
+                continue
+            
+            # Determine winner and loser based on Winner column
+            if winner_name == player_1:
+                winner = player_1
+                loser = player_2
+            elif winner_name == player_2:
+                winner = player_2
+                loser = player_1
+            else:
+                # Winner doesn't match either player - skip
+                skipped += 1
+                continue
+            
+            # Skip invalid dates
+            if pd.isna(row.get('match_date')):
+                skipped += 1
+                continue
+            
+            # Generate player IDs from names (use name as ID since dataset doesn't have IDs)
+            # Normalize names for consistent ID generation
+            winner_id = winner.lower().replace(' ', '_').replace('.', '').replace("'", '')
+            loser_id = loser.lower().replace(' ', '_').replace('.', '').replace("'", '')
+            
+            # Create unique match ID
+            match_date_str = row['match_date'].strftime('%Y%m%d') if not pd.isna(row['match_date']) else str(idx)
+            tournament = str(row.get('Tournament', '')).strip()
+            match_id = f"{match_date_str}_{tournament}_{winner_id}_{loser_id}"
+            
             match = {
-                'match_id': f"{row.get('tourney_id', '')}_{row.get('match_num', '')}",
-                'tournament_name': row.get('tourney_name', ''),
+                'match_id': match_id,
+                'tournament_name': tournament,
                 'surface': row['classified_surface'],
                 'match_date': row['match_date'],
-                'round': row.get('round', ''),
-                'winner_id': str(row.get('winner_id', '')),
-                'winner_name': row.get('winner_name', ''),
-                'winner_country': row.get('winner_ioc', ''),
-                'winner_hand': row.get('winner_hand', ''),
-                'winner_height': row.get('winner_ht'),
-                'winner_birth_year': row.get('winner_age'),
-                'loser_id': str(row.get('loser_id', '')),
-                'loser_name': row.get('loser_name', ''),
-                'loser_country': row.get('loser_ioc', ''),
-                'loser_hand': row.get('loser_hand', ''),
-                'loser_height': row.get('loser_ht'),
-                'loser_birth_year': row.get('loser_age'),
-                'score': row.get('score', ''),
+                'round': str(row.get('Round', '')),
+                'winner_id': winner_id,
+                'winner_name': winner,
+                'winner_country': '',  # Not in dataset
+                'winner_hand': '',     # Not in dataset
+                'winner_height': None, # Not in dataset
+                'winner_birth_year': None,  # Not in dataset
+                'winner_rank': row.get('Rank_1') if winner_name == player_1 else row.get('Rank_2'),
+                'loser_id': loser_id,
+                'loser_name': loser,
+                'loser_country': '',   # Not in dataset
+                'loser_hand': '',      # Not in dataset
+                'loser_height': None,  # Not in dataset
+                'loser_birth_year': None,   # Not in dataset
+                'loser_rank': row.get('Rank_2') if winner_name == player_1 else row.get('Rank_1'),
+                'score': str(row.get('Score', '')),
             }
-            
-            # Skip invalid matches
-            if pd.isna(row['match_date']):
-                continue
-            if not match['winner_id'] or not match['loser_id']:
-                continue
-            if match['winner_id'] == 'nan' or match['loser_id'] == 'nan':
-                continue
                 
             matches.append(match)
             
         except Exception as e:
-            print(f"Error processing row: {e}")
+            print(f"Error processing row {idx}: {e}")
+            skipped += 1
             continue
     
-    print(f"Extracted {len(matches)} valid matches")
+    print(f"Extracted {len(matches)} valid matches (skipped {skipped})")
     return matches
